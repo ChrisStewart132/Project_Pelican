@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pelican - AI Prompt Compiler</title>
+    <style>
+        :root { --bg: #1e1e2e; --surface: #2a2a3c; --text: #cdd6f4; --primary: #89b4fa; --border: #45475a; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: var(--bg); color: var(--text); margin: 0; padding: 20px; display: flex; flex-direction: column; height: 100vh; box-sizing: border-box; }
+        header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); padding-bottom: 15px; margin-bottom: 20px; }
+        h1 { margin: 0; color: var(--primary); }
+        .container { display: flex; gap: 20px; flex: 1; min-height: 0; }
+        .sidebar { width: 350px; background: var(--surface); padding: 20px; border-radius: 8px; overflow-y: auto; border: 1px solid var(--border); }
+        .main-content { flex: 1; display: flex; flex-direction: column; background: var(--surface); padding: 20px; border-radius: 8px; border: 1px solid var(--border); }
+        .form-group { margin-bottom: 20px; }
+        label { display: block; font-weight: bold; margin-bottom: 8px; color: var(--primary); }
+        select, textarea { width: 100%; background: var(--bg); color: var(--text); border: 1px solid var(--border); padding: 10px; border-radius: 4px; box-sizing: border-box; }
+        .checkbox-group { display: flex; flex-direction: column; gap: 8px; }
+        .checkbox-item { display: flex; align-items: flex-start; gap: 8px; background: var(--bg); padding: 10px; border-radius: 4px; border: 1px solid var(--border); }
+        .checkbox-item input { margin-top: 4px; }
+        .dep-badge { font-size: 0.75em; background: var(--primary); color: var(--bg); padding: 2px 6px; border-radius: 12px; margin-left: 5px; }
+        textarea { flex: 1; resize: none; font-family: monospace; font-size: 14px; white-space: pre-wrap; margin-bottom: 15px; }
+        button { background: var(--primary); color: var(--bg); border: none; padding: 12px 20px; border-radius: 4px; font-weight: bold; cursor: pointer; transition: opacity 0.2s; }
+        button:hover { opacity: 0.8; }
+    </style>
+</head>
+<body>
+
+    <header>
+        <h1>Pelican Architect Compiler</h1>
+        <button onclick="compilePrompt()">Compile Final Prompt</button>
+    </header>
+
+    <div class="container">
+        <!-- Configuration Sidebar -->
+        <div class="sidebar">
+            <div class="form-group">
+                <label for="system-select">System Prompt</label>
+                <select id="system-select"><option value="">Loading...</option></select>
+            </div>
+
+            <div class="form-group">
+                <label for="architect-select">Architect Prompt</label>
+                <select id="architect-select"><option value="">Loading...</option></select>
+            </div>
+
+            <div class="form-group">
+                <label for="project-select">Project Prompt</label>
+                <select id="project-select"><option value="">Loading...</option></select>
+            </div>
+
+            <div class="form-group">
+                <label>Code Interfaces (Abstract Modules)</label>
+                <div class="checkbox-group" id="interfaces-list">
+                    <!-- Checkboxes populated via JS -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Output Area -->
+        <div class="main-content">
+            <label for="output-prompt">Compiled AI Transcript Prompt:</label>
+            <textarea id="output-prompt" readonly placeholder="Your compiled prompt will appear here..."></textarea>
+            <button onclick="copyToClipboard()" style="width: 200px;">Copy to Clipboard</button>
+        </div>
+    </div>
+
+    <script>
+        // Store raw data globally for fast compilation
+        const dataStore = {
+            system: [], architect: [], project: [], interfaces:[]
+        };
+
+        async function fetchData(type) {
+            const response = await fetch(`api.php?type=${type}`);
+            return await response.json();
+        }
+
+        function populateSelect(selectId, data) {
+            const select = document.getElementById(selectId);
+            select.innerHTML = '';
+            data.forEach(item => {
+                const option = document.createElement('option');
+                option.value = item.id;
+                option.textContent = item.title;
+                select.appendChild(option);
+            });
+        }
+
+        function populateInterfaces(data) {
+            const container = document.getElementById('interfaces-list');
+            container.innerHTML = '';
+            data.forEach(item => {
+                const label = document.createElement('label');
+                label.className = 'checkbox-item';
+                
+                const deps = item.dependencies ? `<span class="dep-badge">Requires: ID ${item.dependencies}</span>` : '';
+
+                label.innerHTML = `
+                    <input type="checkbox" class="interface-cb" value="${item.id}" data-deps="${item.dependencies}">
+                    <div>
+                        <strong>${item.title}</strong> ${deps}
+                        <div style="font-size: 0.85em; opacity: 0.7; margin-top: 4px;">${item.content.substring(0, 50)}...</div>
+                    </div>
+                `;
+                container.appendChild(label);
+            });
+
+            // Add event listeners for dependency auto-checking
+            document.querySelectorAll('.interface-cb').forEach(cb => {
+                cb.addEventListener('change', handleDependencyCheck);
+            });
+        }
+
+        // Magic logic to auto-enable required Code Interfaces
+        function handleDependencyCheck(e) {
+            if (!e.target.checked) return; // Only care about checking
+            
+            const depsStr = e.target.getAttribute('data-deps');
+            if (!depsStr) return;
+
+            const deps = depsStr.split(',').map(id => id.trim());
+            deps.forEach(depId => {
+                const depCheckbox = document.querySelector(`.interface-cb[value="${depId}"]`);
+                if (depCheckbox && !depCheckbox.checked) {
+                    depCheckbox.checked = true;
+                    // Flash effect to show it was auto-selected
+                    depCheckbox.parentElement.style.backgroundColor = 'rgba(137, 180, 250, 0.3)';
+                    setTimeout(() => depCheckbox.parentElement.style.backgroundColor = 'var(--bg)', 500);
+                    
+                    // Recursively check dependencies
+                    depCheckbox.dispatchEvent(new Event('change'));
+                }
+            });
+        }
+
+        async function initApp() {
+            // Fetch all data
+            dataStore.system = await fetchData('system');
+            dataStore.architect = await fetchData('architect');
+            dataStore.project = await fetchData('project');
+            dataStore.interfaces = await fetchData('interfaces');
+
+            // Populate UI
+            populateSelect('system-select', dataStore.system);
+            populateSelect('architect-select', dataStore.architect);
+            populateSelect('project-select', dataStore.project);
+            populateInterfaces(dataStore.interfaces);
+        }
+
+        function compilePrompt() {
+            const sysId = document.getElementById('system-select').value;
+            const archId = document.getElementById('architect-select').value;
+            const projId = document.getElementById('project-select').value;
+
+            const sysContent = dataStore.system.find(i => i.id == sysId)?.content || '';
+            const archContent = dataStore.architect.find(i => i.id == archId)?.content || '';
+            const projContent = dataStore.project.find(i => i.id == projId)?.content || '';
+
+            // Get selected interfaces
+            const selectedCbs = document.querySelectorAll('.interface-cb:checked');
+            let interfacesText = '';
+            
+            selectedCbs.forEach(cb => {
+                const iface = dataStore.interfaces.find(i => i.id == cb.value);
+                if (iface) {
+                    interfacesText += `--- [INTERFACE: ${iface.title}] ---\n${iface.content}\n\n`;
+                }
+            });
+
+            // Construct Final Prompt Template
+            const finalPrompt = `[SYSTEM INSTRUCTIONS]
+${sysContent}
+
+[ARCHITECT ROLE]
+${archContent}
+
+[PROJECT SPECIFICATION]
+${projContent}
+
+[REQUIRED CODE INTERFACES]
+The following abstract interfaces MUST be implemented and adhered to strictly to ensure modularity.
+
+${interfacesText ? interfacesText : "No specific code interfaces provided for this module."}
+
+[EXECUTION INSTRUCTIONS]
+Please generate the code required to fulfill the PROJECT SPECIFICATION utilizing the REQUIRED CODE INTERFACES above. Provide complete files without truncation.`;
+
+            document.getElementById('output-prompt').value = finalPrompt;
+        }
+
+        function copyToClipboard() {
+            const textarea = document.getElementById('output-prompt');
+            textarea.select();
+            document.execCommand('copy');
+            alert('Prompt copied to clipboard!');
+        }
+
+        // Boot
+        initApp();
+    </script>
+</body>
+</html>

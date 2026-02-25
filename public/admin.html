@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pelican - Admin Panel</title>
+    <style>
+        :root { --bg: #11111b; --surface: #1e1e2e; --surface-2: #313244; --text: #cdd6f4; --primary: #a6e3a1; --edit: #f9e2af; --error: #f38ba8; --border: #45475a; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: var(--bg); color: var(--text); margin: 0; padding: 40px; display: flex; justify-content: center; }
+        .admin-container { background: var(--surface); padding: 30px; border-radius: 8px; border: 1px solid var(--border); width: 100%; max-width: 600px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+        h1 { margin-top: 0; color: var(--primary); text-align: center; border-bottom: 1px solid var(--border); padding-bottom: 15px; margin-bottom: 25px;}
+        .form-group { margin-bottom: 20px; }
+        label { display: block; font-weight: bold; margin-bottom: 8px; color: var(--text); }
+        input[type="text"], input[type="password"], select, textarea { width: 100%; background: var(--surface-2); color: var(--text); border: 1px solid var(--border); padding: 12px; border-radius: 4px; box-sizing: border-box; font-family: inherit; }
+        textarea { resize: vertical; min-height: 150px; }
+        .help-text { font-size: 0.8em; color: #a6adc8; margin-top: 5px; }
+        button { background: var(--primary); color: #111; border: none; padding: 14px 20px; border-radius: 4px; font-weight: bold; cursor: pointer; width: 100%; font-size: 1.1em; transition: opacity 0.2s; }
+        button:hover { opacity: 0.8; }
+        
+        /* New Radio Button Styles */
+        .mode-toggle { display: flex; gap: 20px; background: var(--surface-2); padding: 15px; border-radius: 4px; border: 1px solid var(--border); margin-bottom: 20px;}
+        .mode-toggle label { margin-bottom: 0; cursor: pointer; display: flex; align-items: center; gap: 8px; }
+        
+        .message { padding: 15px; border-radius: 4px; margin-bottom: 20px; display: none; text-align: center; font-weight: bold; }
+        .msg-success { background: rgba(166, 227, 161, 0.2); color: var(--primary); border: 1px solid var(--primary); }
+        .msg-error { background: rgba(243, 139, 168, 0.2); color: var(--error); border: 1px solid var(--error); }
+        .nav-link { display: block; text-align: center; margin-top: 20px; color: #89b4fa; text-decoration: none; }
+        .nav-link:hover { text-decoration: underline; }
+    </style>
+</head>
+<body>
+
+    <div class="admin-container">
+        <h1>Pelican Data Management</h1>
+
+        <div id="status-msg" class="message"></div>
+
+        <div class="mode-toggle">
+            <label><input type="radio" name="mode" value="create" checked onchange="handleModeChange()"> Create New</label>
+            <label><input type="radio" name="mode" value="edit" onchange="handleModeChange()"> Edit Existing</label>
+        </div>
+
+        <form id="adminForm" onsubmit="submitData(event)">
+            
+            <div class="form-group">
+                <label for="secret">Admin Password</label>
+                <input type="password" id="secret" required placeholder="Enter the password from api.php">
+            </div>
+
+            <div class="form-group">
+                <label for="type">Category</label>
+                <select id="type" required onchange="handleTypeChange()">
+                    <option value="system">System Prompt</option>
+                    <option value="architect">Architect Prompt</option>
+                    <option value="project">Project Prompt</option>
+                    <option value="interfaces">Code Interface</option>
+                </select>
+            </div>
+
+            <!-- This dropdown only appears in Edit Mode -->
+            <div class="form-group" id="edit-selection-group" style="display: none;">
+                <label for="item-select">Select Item to Edit</label>
+                <select id="item-select" onchange="loadSelectedData()">
+                    <option value="">-- Select an item --</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label for="title">Title / Name</label>
+                <input type="text" id="title" required placeholder="e.g., Grid Based World">
+            </div>
+
+            <div class="form-group">
+                <label for="content">Content Specifications</label>
+                <textarea id="content" required placeholder="Enter the prompt or abstract interface specification here..."></textarea>
+            </div>
+
+            <div class="form-group" id="dep-group" style="display: none;">
+                <label for="dependencies">Dependencies (Optional)</label>
+                <input type="text" id="dependencies" placeholder="e.g., 1, 4">
+                <div class="help-text">Comma-separated list of Interface IDs this relies on. Look at your main app UI to find the IDs.</div>
+            </div>
+
+            <button type="submit" id="submit-btn">Save to Database</button>
+        </form>
+
+        <a href="index.html" class="nav-link">&larr; Back to Pelican Compiler</a>
+    </div>
+
+    <script>
+        let currentFetchedItems = []; // Stores the data fetched from the DB for editing
+
+        function getMode() {
+            return document.querySelector('input[name="mode"]:checked').value;
+        }
+
+        function handleModeChange() {
+            const mode = getMode();
+            const editGroup = document.getElementById('edit-selection-group');
+            const btn = document.getElementById('submit-btn');
+            
+            document.getElementById('status-msg').style.display = 'none';
+
+            if (mode === 'edit') {
+                editGroup.style.display = 'block';
+                btn.style.backgroundColor = 'var(--edit)';
+                btn.style.color = '#111';
+                btn.innerText = 'Update Database';
+                fetchItemsForEdit();
+            } else {
+                editGroup.style.display = 'none';
+                btn.style.backgroundColor = 'var(--primary)';
+                btn.innerText = 'Save to Database';
+                clearForm();
+            }
+        }
+
+        function handleTypeChange() {
+            // Show/hide dependencies field based on dropdown selection
+            const type = document.getElementById('type').value;
+            const depGroup = document.getElementById('dep-group');
+            
+            if (type === 'interfaces') {
+                depGroup.style.display = 'block';
+            } else {
+                depGroup.style.display = 'none';
+                document.getElementById('dependencies').value = '';
+            }
+
+            // If we are in edit mode and switch category, re-fetch the list
+            if (getMode() === 'edit') {
+                fetchItemsForEdit();
+            }
+        }
+
+        async function fetchItemsForEdit() {
+            const type = document.getElementById('type').value;
+            const select = document.getElementById('item-select');
+            
+            select.innerHTML = '<option value="">Loading...</option>';
+            
+            try {
+                const response = await fetch(`api.php?type=${type}`);
+                currentFetchedItems = await response.json();
+                
+                select.innerHTML = '<option value="">-- Select an item --</option>';
+                currentFetchedItems.forEach(item => {
+                    const opt = document.createElement('option');
+                    opt.value = item.id;
+                    opt.textContent = `[ID: ${item.id}] ${item.title}`;
+                    select.appendChild(opt);
+                });
+            } catch (error) {
+                select.innerHTML = '<option value="">Error loading items</option>';
+            }
+            
+            clearForm(); // Clear the form until they actually select an item
+        }
+
+        function loadSelectedData() {
+            const selectedId = document.getElementById('item-select').value;
+            const item = currentFetchedItems.find(i => i.id == selectedId);
+            
+            if (item) {
+                document.getElementById('title').value = item.title;
+                document.getElementById('content').value = item.content;
+                if (document.getElementById('type').value === 'interfaces') {
+                    document.getElementById('dependencies').value = item.dependencies || '';
+                }
+            } else {
+                clearForm();
+            }
+        }
+
+        function clearForm() {
+            document.getElementById('title').value = '';
+            document.getElementById('content').value = '';
+            document.getElementById('dependencies').value = '';
+        }
+
+        async function submitData(e) {
+            e.preventDefault();
+            
+            const mode = getMode();
+            const btn = document.getElementById('submit-btn');
+            const msgBox = document.getElementById('status-msg');
+            
+            // If editing, ensure an item is selected
+            let editId = null;
+            if (mode === 'edit') {
+                editId = document.getElementById('item-select').value;
+                if (!editId) {
+                    alert('Please select an item to edit.');
+                    return;
+                }
+            }
+            
+            btn.disabled = true;
+            btn.innerText = 'Processing...';
+            msgBox.style.display = 'none';
+
+            // Gather data
+            const payload = {
+                secret: document.getElementById('secret').value,
+                type: document.getElementById('type').value,
+                title: document.getElementById('title').value,
+                content: document.getElementById('content').value,
+                dependencies: document.getElementById('dependencies').value
+            };
+
+            // Inject the ID if we are editing
+            if (editId) {
+                payload.id = editId;
+            }
+
+            try {
+                const response = await fetch('api.php', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    // Success
+                    msgBox.className = 'message msg-success';
+                    msgBox.innerText = result.message;
+                    msgBox.style.display = 'block';
+                    
+                    if (mode === 'create') {
+                        clearForm();
+                    } else {
+                        // Refresh the edit list to show updated titles if changed
+                        fetchItemsForEdit(); 
+                    }
+                } else {
+                    // Server returned an error
+                    msgBox.className = 'message msg-error';
+                    msgBox.innerText = result.error || 'Unknown error occurred.';
+                    msgBox.style.display = 'block';
+                }
+            } catch (error) {
+                // Network error
+                msgBox.className = 'message msg-error';
+                msgBox.innerText = 'Network error: Could not reach api.php';
+                msgBox.style.display = 'block';
+            } finally {
+                btn.disabled = false;
+                btn.innerText = mode === 'edit' ? 'Update Database' : 'Save to Database';
+            }
+        }
+    </script>
+</body>
+</html>

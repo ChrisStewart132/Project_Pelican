@@ -48,11 +48,17 @@ if ($method === 'POST') {
         exit;
     }
 
-    $id = $data['id'] ?? null; // If ID is provided, we are editing.
+    $id = $data['id'] ?? null;
     $type = $data['type'] ?? '';
     $title = trim($data['title'] ?? '');
-    $content = trim($data['content'] ?? '');
     $deps = trim($data['dependencies'] ?? '');
+    
+    // THE BYPASS: Check if the content was scrambled to bypass the firewall
+    $content = $data['content'] ?? '';
+    if (isset($data['is_base64']) && $data['is_base64'] === true) {
+        $content = base64_decode($content);
+    }
+    $content = trim($content);
 
     if (empty($title) || empty($content)) {
         http_response_code(400);

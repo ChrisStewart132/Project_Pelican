@@ -15,10 +15,14 @@
         .form-group { margin-bottom: 20px; }
         label { display: block; font-weight: bold; margin-bottom: 8px; color: var(--primary); }
         select, textarea { width: 100%; background: var(--bg); color: var(--text); border: 1px solid var(--border); padding: 10px; border-radius: 4px; box-sizing: border-box; }
-        .checkbox-group { display: flex; flex-direction: column; gap: 8px; }
-        .checkbox-item { display: flex; align-items: flex-start; gap: 8px; background: var(--bg); padding: 10px; border-radius: 4px; border: 1px solid var(--border); }
-        .checkbox-item input { margin-top: 4px; }
-        .dep-badge { font-size: 0.75em; background: var(--primary); color: var(--bg); padding: 2px 6px; border-radius: 12px; margin-left: 5px; }
+        
+        /* Compacted Checkbox UI */
+        .checkbox-group { display: flex; flex-direction: column; gap: 6px; }
+        .checkbox-item { display: flex; align-items: center; gap: 8px; background: var(--bg); padding: 8px 10px; border-radius: 4px; border: 1px solid var(--border); font-size: 14px; transition: background-color 0.3s;}
+        .checkbox-item input { margin: 0; cursor: pointer; }
+        .checkbox-item span { cursor: default; }
+        .dep-badge { font-size: 0.75em; background: var(--primary); color: var(--bg); padding: 2px 6px; border-radius: 12px; margin-left: 5px; font-weight: bold;}
+        
         textarea { flex: 1; resize: none; font-family: monospace; font-size: 14px; white-space: pre-wrap; margin-bottom: 15px; }
         button { background: var(--primary); color: var(--bg); border: none; padding: 12px 20px; border-radius: 4px; font-weight: bold; cursor: pointer; transition: opacity 0.2s; }
         button:hover { opacity: 0.8; }
@@ -50,7 +54,7 @@
             </div>
 
             <div class="form-group">
-                <label>Code Interfaces (Abstract Modules)</label>
+                <label>Code Interfaces</label>
                 <div class="checkbox-group" id="interfaces-list">
                     <!-- Checkboxes populated via JS -->
                 </div>
@@ -59,8 +63,9 @@
 
         <!-- Output Area -->
         <div class="main-content">
-            <label for="output-prompt">Compiled AI Transcript Prompt:</label>
-            <textarea id="output-prompt" readonly placeholder="Your compiled prompt will appear here..."></textarea>
+            <label for="output-prompt">Compiled AI Transcript Prompt (Editable):</label>
+            <!-- Removed 'readonly' so the user can edit the text before copying -->
+            <textarea id="output-prompt" placeholder="Your compiled prompt will appear here. Feel free to edit it before copying..."></textarea>
             <button onclick="copyToClipboard()" style="width: 200px;">Copy to Clipboard</button>
         </div>
     </div>
@@ -72,13 +77,20 @@
         };
 
         async function fetchData(type) {
-            const response = await fetch(`api.php?type=${type}`);
-            return await response.json();
+            try {
+                const response = await fetch(`api.php?type=${type}`);
+                return await response.json();
+            } catch (err) {
+                console.error("Failed to fetch data:", err);
+                return [];
+            }
         }
 
         function populateSelect(selectId, data) {
             const select = document.getElementById(selectId);
             select.innerHTML = '';
+            if (!data || data.error) return;
+            
             data.forEach(item => {
                 const option = document.createElement('option');
                 option.value = item.id;
@@ -90,18 +102,21 @@
         function populateInterfaces(data) {
             const container = document.getElementById('interfaces-list');
             container.innerHTML = '';
+            if (!data || data.error) return;
+
             data.forEach(item => {
                 const label = document.createElement('label');
                 label.className = 'checkbox-item';
                 
-                const deps = item.dependencies ? `<span class="dep-badge">Requires: ID ${item.dependencies}</span>` : '';
+                // Show a clean, small dependency badge if dependencies exist
+                const deps = item.dependencies ? `<span class="dep-badge">Requires ID: ${item.dependencies}</span>` : '';
 
+                // Compact layout: Just the checkbox, title, and dependency badge
                 label.innerHTML = `
                     <input type="checkbox" class="interface-cb" value="${item.id}" data-deps="${item.dependencies}">
-                    <div>
+                    <span>
                         <strong>${item.title}</strong> ${deps}
-                        <div style="font-size: 0.85em; opacity: 0.7; margin-top: 4px;">${item.content.substring(0, 50)}...</div>
-                    </div>
+                    </span>
                 `;
                 container.appendChild(label);
             });
@@ -112,23 +127,26 @@
             });
         }
 
-        // Magic logic to auto-enable required Code Interfaces
+        // Recursively auto-enable required Code Interfaces
         function handleDependencyCheck(e) {
-            if (!e.target.checked) return; // Only care about checking
+            if (!e.target.checked) return; // Only trigger logic when checking a box
             
             const depsStr = e.target.getAttribute('data-deps');
             if (!depsStr) return;
 
             const deps = depsStr.split(',').map(id => id.trim());
             deps.forEach(depId => {
+                if (!depId) return; // Safety check for trailing commas
+
                 const depCheckbox = document.querySelector(`.interface-cb[value="${depId}"]`);
                 if (depCheckbox && !depCheckbox.checked) {
                     depCheckbox.checked = true;
-                    // Flash effect to show it was auto-selected
-                    depCheckbox.parentElement.style.backgroundColor = 'rgba(137, 180, 250, 0.3)';
-                    setTimeout(() => depCheckbox.parentElement.style.backgroundColor = 'var(--bg)', 500);
                     
-                    // Recursively check dependencies
+                    // Flash effect to show the human architect it was auto-selected
+                    depCheckbox.parentElement.style.backgroundColor = 'rgba(137, 180, 250, 0.4)';
+                    setTimeout(() => depCheckbox.parentElement.style.backgroundColor = 'var(--bg)', 600);
+                    
+                    // Recursively check deeper dependencies
                     depCheckbox.dispatchEvent(new Event('change'));
                 }
             });
@@ -191,9 +209,20 @@ Please generate the code required to fulfill the PROJECT SPECIFICATION utilizing
 
         function copyToClipboard() {
             const textarea = document.getElementById('output-prompt');
-            textarea.select();
-            document.execCommand('copy');
-            alert('Prompt copied to clipboard!');
+            
+            // Modern clipboard API is more reliable for edited textareas
+            if (navigator.clipboard) {
+                navigator.clipboard.writeText(textarea.value).then(() => {
+                    alert('Prompt copied to clipboard!');
+                }).catch(err => {
+                    console.error('Failed to copy text: ', err);
+                });
+            } else {
+                // Fallback for older browsers
+                textarea.select();
+                document.execCommand('copy');
+                alert('Prompt copied to clipboard!');
+            }
         }
 
         // Boot

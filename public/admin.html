@@ -87,8 +87,8 @@
         <a href="index.html" class="nav-link">&larr; Back to Pelican Compiler</a>
     </div>
 
-    <script>
-        let currentFetchedItems = []; // Stores the data fetched from the DB for editing
+<script>
+        let currentFetchedItems = []; 
 
         function getMode() {
             return document.querySelector('input[name="mode"]:checked').value;
@@ -116,7 +116,6 @@
         }
 
         function handleTypeChange() {
-            // Show/hide dependencies field based on dropdown selection
             const type = document.getElementById('type').value;
             const depGroup = document.getElementById('dep-group');
             
@@ -127,7 +126,6 @@
                 document.getElementById('dependencies').value = '';
             }
 
-            // If we are in edit mode and switch category, re-fetch the list
             if (getMode() === 'edit') {
                 fetchItemsForEdit();
             }
@@ -154,7 +152,7 @@
                 select.innerHTML = '<option value="">Error loading items</option>';
             }
             
-            clearForm(); // Clear the form until they actually select an item
+            clearForm();
         }
 
         function loadSelectedData() {
@@ -178,6 +176,13 @@
             document.getElementById('dependencies').value = '';
         }
 
+        // --- NEW: Safe Base64 Encoder to bypass Hostinger Firewall ---
+        function encodeForTransit(str) {
+            const bytes = new TextEncoder().encode(str);
+            const binString = Array.from(bytes, (byte) => String.fromCodePoint(byte)).join("");
+            return btoa(binString);
+        }
+
         async function submitData(e) {
             e.preventDefault();
             
@@ -185,7 +190,6 @@
             const btn = document.getElementById('submit-btn');
             const msgBox = document.getElementById('status-msg');
             
-            // If editing, ensure an item is selected
             let editId = null;
             if (mode === 'edit') {
                 editId = document.getElementById('item-select').value;
@@ -199,16 +203,19 @@
             btn.innerText = 'Processing...';
             msgBox.style.display = 'none';
 
-            // Gather data
+            // Scramble the content before sending it over the network
+            const rawContent = document.getElementById('content').value;
+            const scrambledContent = encodeForTransit(rawContent);
+
             const payload = {
                 secret: document.getElementById('secret').value,
                 type: document.getElementById('type').value,
                 title: document.getElementById('title').value,
-                content: document.getElementById('content').value,
-                dependencies: document.getElementById('dependencies').value
+                content: scrambledContent,
+                dependencies: document.getElementById('dependencies').value,
+                is_base64: true // Flag to tell api.php to decode it
             };
 
-            // Inject the ID if we are editing
             if (editId) {
                 payload.id = editId;
             }
@@ -223,7 +230,6 @@
                 const result = await response.json();
 
                 if (response.ok) {
-                    // Success
                     msgBox.className = 'message msg-success';
                     msgBox.innerText = result.message;
                     msgBox.style.display = 'block';
@@ -231,17 +237,14 @@
                     if (mode === 'create') {
                         clearForm();
                     } else {
-                        // Refresh the edit list to show updated titles if changed
                         fetchItemsForEdit(); 
                     }
                 } else {
-                    // Server returned an error
                     msgBox.className = 'message msg-error';
                     msgBox.innerText = result.error || 'Unknown error occurred.';
                     msgBox.style.display = 'block';
                 }
             } catch (error) {
-                // Network error
                 msgBox.className = 'message msg-error';
                 msgBox.innerText = 'Network error: Could not reach api.php';
                 msgBox.style.display = 'block';

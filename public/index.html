@@ -282,6 +282,45 @@
             transform: translateY(1px);
             box-shadow: 0 2px 10px rgba(137, 180, 250, 0.3);
         }
+
+        /* Tabs */
+        .tabs {
+            display: flex;
+            background: rgba(17, 17, 27, 0.6);
+            padding: 6px;
+            border-radius: 12px;
+            border: 1px solid var(--border);
+            margin: 0 auto 25px auto;
+            width: fit-content;
+            max-width: 1400px;
+        }
+
+        .tab-btn {
+            background: transparent;
+            color: var(--text-muted);
+            border: none;
+            padding: 10px 24px;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 0.95rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: none;
+            display: inline-flex;
+        }
+
+        .tab-btn.active {
+            background: var(--accent-gradient);
+            color: var(--bg);
+            box-shadow: 0 4px 12px rgba(137, 180, 250, 0.2);
+        }
+
+        .tab-btn:hover:not(.active) {
+            color: var(--text);
+            transform: none;
+            box-shadow: none;
+            background: rgba(137, 180, 250, 0.1);
+        }
     </style>
 </head>
 
@@ -298,32 +337,62 @@
         </button>
     </header>
 
+    <div class="tabs">
+        <button class="tab-btn active" onclick="switchTab('genesis')" id="tab-genesis">Genesis Prompt</button>
+        <button class="tab-btn" onclick="switchTab('followup')" id="tab-followup">Follow-Up Prompt</button>
+    </div>
+
     <div class="container">
         <!-- Configuration Sidebar -->
         <div class="sidebar glass-panel">
-            <div class="form-group">
-                <label for="system-select">System Prompt</label>
-                <select id="system-select">
-                    <option value="">Loading...</option>
-                </select>
+
+            <!-- Genesis View -->
+            <div id="genesis-sidebar" style="display: flex; flex-direction: column; gap: 24px;">
+                <div class="form-group">
+                    <label for="system-select">System Prompt</label>
+                    <select id="system-select">
+                        <option value="">Loading...</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="architect-select">Architect Prompt</label>
+                    <select id="architect-select">
+                        <option value="">Loading...</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="project-select">Project Prompt</label>
+                    <select id="project-select">
+                        <option value="">Loading...</option>
+                    </select>
+                </div>
             </div>
 
-            <div class="form-group">
-                <label for="architect-select">Architect Prompt</label>
-                <select id="architect-select">
-                    <option value="">Loading...</option>
-                </select>
+            <!-- Follow-Up View -->
+            <div id="followup-sidebar" style="display: none; flex-direction: column; gap: 24px;">
+                <div class="form-group">
+                    <label for="task-type">Task Type</label>
+                    <select id="task-type">
+                        <option value="Implement Component">Implement Component</option>
+                        <option value="Debug / Error Fix">Debug / Error Fix</option>
+                        <option value="Refactor / Optimize">Refactor / Optimize</option>
+                        <option value="Feature Addition">Feature Addition</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="architect-notes">Architect Notes / Logs</label>
+                    <textarea id="architect-notes"
+                        placeholder="Paste error logs, new requirements, or specific instructions here..."
+                        style="min-height: 150px; margin-bottom: 0;"></textarea>
+                </div>
             </div>
 
-            <div class="form-group">
-                <label for="project-select">Project Prompt</label>
-                <select id="project-select">
-                    <option value="">Loading...</option>
-                </select>
-            </div>
-
-            <div class="form-group">
-                <label>Code Interfaces</label>
+            <!-- Code Interfaces (Shared) -->
+            <div class="form-group" style="padding-top: 20px; border-top: 1px solid var(--border);">
+                <label>Relevant Code Interfaces</label>
                 <div class="checkbox-group" id="interfaces-list">
                     <!-- Checkboxes populated via JS -->
                 </div>
@@ -349,10 +418,28 @@
     </div>
 
     <script>
+        let currentMode = 'genesis'; // 'genesis' or 'followup'
+
         // Store raw data globally for fast compilation
         const dataStore = {
             system: [], architect: [], project: [], interfaces: []
         };
+
+        function switchTab(mode) {
+            currentMode = mode;
+
+            if (mode === 'genesis') {
+                document.getElementById('tab-genesis').classList.add('active');
+                document.getElementById('tab-followup').classList.remove('active');
+                document.getElementById('genesis-sidebar').style.display = 'flex';
+                document.getElementById('followup-sidebar').style.display = 'none';
+            } else {
+                document.getElementById('tab-followup').classList.add('active');
+                document.getElementById('tab-genesis').classList.remove('active');
+                document.getElementById('followup-sidebar').style.display = 'flex';
+                document.getElementById('genesis-sidebar').style.display = 'none';
+            }
+        }
 
         async function fetchData(type) {
             try {
@@ -445,14 +532,6 @@
         }
 
         function compilePrompt() {
-            const sysId = document.getElementById('system-select').value;
-            const archId = document.getElementById('architect-select').value;
-            const projId = document.getElementById('project-select').value;
-
-            const sysContent = dataStore.system.find(i => i.id == sysId)?.content || '';
-            const archContent = dataStore.architect.find(i => i.id == archId)?.content || '';
-            const projContent = dataStore.project.find(i => i.id == projId)?.content || '';
-
             // Get selected interfaces
             const selectedCbs = document.querySelectorAll('.interface-cb:checked');
             let interfacesText = '';
@@ -464,8 +543,18 @@
                 }
             });
 
-            // Construct Final Prompt Template
-            const finalPrompt = `[SYSTEM INSTRUCTIONS]
+            let finalPrompt = '';
+
+            if (currentMode === 'genesis') {
+                const sysId = document.getElementById('system-select').value;
+                const archId = document.getElementById('architect-select').value;
+                const projId = document.getElementById('project-select').value;
+
+                const sysContent = dataStore.system.find(i => i.id == sysId)?.content || '';
+                const archContent = dataStore.architect.find(i => i.id == archId)?.content || '';
+                const projContent = dataStore.project.find(i => i.id == projId)?.content || '';
+
+                finalPrompt = `[SYSTEM INSTRUCTIONS]
 ${sysContent}
 
 [ARCHITECT ROLE]
@@ -480,7 +569,24 @@ The following abstract interfaces MUST be implemented and adhered to strictly to
 ${interfacesText ? interfacesText : "No specific code interfaces provided for this module."}
 
 [EXECUTION INSTRUCTIONS]
-Please generate the code required to fulfill the PROJECT SPECIFICATION utilizing the REQUIRED CODE INTERFACES above. Provide complete files without truncation.`;
+Utilize your available agentic tools (file writing, terminal execution, etc.) to fulfill the PROJECT SPECIFICATION utilizing the REQUIRED CODE INTERFACES above. Write production-grade, highly scalable code directly to the workspace and document everything meticulously.`;
+            } else {
+                const taskType = document.getElementById('task-type').value;
+                const notes = document.getElementById('architect-notes').value;
+
+                finalPrompt = `[FOLLOW-UP TASK: ${taskType.toUpperCase()}]
+Please provide the complete implementation for the requested components. 
+Remember to adhere to the previously defined architecture and system instructions. 
+
+[ARCHITECT NOTES]
+${notes ? notes : "No additional notes provided."}
+
+[RELEVANT INTERFACES]
+${interfacesText ? interfacesText : "No specific code interfaces provided for this task."}
+
+[EXECUTION INSTRUCTIONS]
+Utilize your available agentic tools to execute the implementation directly within the workspace. Ensure that ALL code you write is production-grade, highly scalable, and properly integrated with the existing architecture. Do not output raw code blocks unless explicitly requested or for quick terminal verifications.`;
+            }
 
             document.getElementById('output-prompt').value = finalPrompt;
         }
